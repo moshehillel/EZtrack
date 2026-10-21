@@ -288,8 +288,9 @@ exports.vanLocation = onRequest(
           return;
         }
 
+        // Share links use geojsonshare.aspx (geojson.aspx returns empty for share SIDs).
         const trackingUrl =
-          "https://portal.gps-tracking.com/geojson.aspx" +
+          "https://portal.gps-tracking.com/geojsonshare.aspx" +
           "?action=shareinit&sid=" + encodeURIComponent(sid);
         const trackingResponse = await axios.get(trackingUrl, {timeout: 10000});
 
