@@ -288,15 +288,56 @@ exports.vanLocation = onRequest(
           return;
         }
 
+        // Share links use geojsonshare.aspx (geojson.aspx returns empty for share SIDs).
         const trackingUrl =
-          "https://portal.gps-tracking.com/geojson.aspx" +
+          "https://portal.gps-tracking.com/geojsonshare.aspx" +
           "?action=shareinit&sid=" + encodeURIComponent(sid);
-        const trackingResponse = await axios.get(trackingUrl, {timeout: 10000});
 
-        const feature = trackingResponse.data &&
-          trackingResponse.data.features &&
-          trackingResponse.data.features[0];
-        if (!feature) throw new Error("No location data found");
+        /**
+         * Fetches share GeoJSON with retries for GPS portal timeouts/empty replies.
+         * @return {Promise<object>} First GeoJSON feature
+         */
+        async function fetchShareFeature() {
+          const maxAttempts = 3;
+          const perTryTimeoutMs = 6000;
+          let lastError = new Error("No location data found");
+
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+              const trackingResponse = await axios.get(trackingUrl, {
+                timeout: perTryTimeoutMs,
+              });
+              const feature = trackingResponse.data &&
+                trackingResponse.data.features &&
+                trackingResponse.data.features[0];
+              if (feature) {
+                if (attempt > 1) {
+                  logger.info(`GPS share succeeded on attempt ${attempt}`);
+                }
+                return feature;
+              }
+              lastError = new Error("No location data found");
+              logger.warn(
+                  `GPS share empty on attempt ${attempt}/${maxAttempts}`,
+              );
+            } catch (e) {
+              lastError = e;
+              logger.warn(
+                  `GPS share fetch failed on attempt ${attempt}/${maxAttempts}`,
+                  e,
+              );
+            }
+
+            if (attempt < maxAttempts) {
+              const delayMs = 400 * attempt;
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+          }
+
+          throw lastError;
+        }
+
+        const feature = await fetchShareFeature();
 
         const coords = feature && feature.geometry &&
             feature.geometry.coordinates;
